@@ -106,16 +106,12 @@ namespace IL2CPU.API
             return xName;
         }
 
-        public static string GetFullName(Type aType)
+        public static string GetFullName(Type aType,bool checkParam = true)
         {
-            if (aType.IsGenericParameter)
-            {
-                return aType.FullName;
-            }
             var xSB = new StringBuilder(256);
             if (aType.IsArray)
             {
-                xSB.Append(GetFullName(aType.GetElementType()));
+                xSB.Append(GetFullName(aType.GetElementType(), checkParam));
                 xSB.Append("[");
                 int xRank = aType.GetArrayRank();
                 while (xRank > 1)
@@ -128,20 +124,20 @@ namespace IL2CPU.API
             }
             if (aType.IsByRef && aType.HasElementType)
             {
-                return "&" + GetFullName(aType.GetElementType());
+                return "&" + GetFullName(aType.GetElementType(), checkParam);
             }
             if (aType.IsGenericType && !aType.IsGenericTypeDefinition)
             {
-                xSB.Append(GetFullName(aType.GetGenericTypeDefinition()));
+                xSB.Append(GetFullName(aType.GetGenericTypeDefinition(), checkParam));
 
                 xSB.Append("<");
                 var xArgs = aType.GetGenericArguments();
                 for (int i = 0; i < xArgs.Length - 1; i++)
                 {
-                    xSB.Append(GetFullName(xArgs[i]));
+                    xSB.Append(GetFullName(xArgs[i], false));
                     xSB.Append(", ");
                 }
-                xSB.Append(GetFullName(xArgs.Last()));
+                xSB.Append(GetFullName(xArgs.Last(), false));
                 xSB.Append(">");
             }
             else
@@ -149,7 +145,25 @@ namespace IL2CPU.API
                 xSB.Append(aType.FullName);
             }
 
-            if(aType.Name == "SR" || aType.Name == "PathInternal" || aType.Name.Contains("PrivateImplementationDetails")) //TODO:  we need to deal with this more generally
+            if (aType.IsGenericParameter)
+            {
+                if (checkParam)
+                {
+                    xSB.Append(aType.DeclaringType.FullName);
+                    xSB.Append(aType.DeclaringMethod?.Name);
+                    var paramss = aType.DeclaringMethod?.GetParameters();
+                    if (paramss != null)
+                    {
+                        foreach (var item in paramss)
+                        {
+                            xSB.Append(GetFullName(item.ParameterType,false));
+                        }
+                    }
+                }
+                xSB.Append(aType.Name);
+            }
+
+            if (aType.Name == "SR" || aType.Name == "PathInternal" || aType.Name.Contains("PrivateImplementationDetails")) //TODO:  we need to deal with this more generally
             {
                 return aType.Assembly.FullName.Split(',')[0].Replace(".", "") + xSB.ToString();
             }

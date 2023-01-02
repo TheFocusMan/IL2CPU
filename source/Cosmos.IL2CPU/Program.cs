@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Threading;
 
 namespace Cosmos.IL2CPU
 {
@@ -10,7 +11,7 @@ namespace Cosmos.IL2CPU
 
         public static int Run(string[] aArgs, Action<string> aLogMessage, Action<string> aLogError)
         {
-            var debug = Environment.GetEnvironmentVariable(EnvironmentVariables.IL2CPU_DEBUG);
+            var debug = Environment.GetEnvironmentVariable(EnvironmentVariables.IL2CPU_DEBUG,EnvironmentVariableTarget.User);
 
             if (String.Equals(debug, Boolean.TrueString, StringComparison.OrdinalIgnoreCase)
                 || String.Equals(debug, "1", StringComparison.OrdinalIgnoreCase))
@@ -19,7 +20,7 @@ namespace Cosmos.IL2CPU
 
                 while (!Debugger.IsAttached)
                 {
-                    Debugger.Break();
+                    Thread.Sleep(1000);
                 }
             }
 

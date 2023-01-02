@@ -27,6 +27,8 @@ using XSharp.Assembler.x86;
 using static XSharp.XSRegisters;
 using Label = XSharp.Assembler.Label;
 using Cosmos.IL2CPU.MethodAnalysis;
+using System.Reflection.Emit;
+using Dapper;
 
 namespace Cosmos.IL2CPU
 {
@@ -191,7 +193,7 @@ namespace Cosmos.IL2CPU
                             INDEXINMETHOD = xLocals[i].LocalIndex,
                             NAME = "Local" + xLocals[i].LocalIndex,
                             OFFSET = 0 - (int)ILOp.GetEBPOffsetForLocalForDebugger(aMethod, i),
-                            TYPENAME = xLocals[i].LocalType.FullName
+                            TYPENAME = xLocals[i].LocalType.FullName ?? i.ToString()
                         };
                         mLocals_Arguments_Infos.Add(xInfo);
 
@@ -216,7 +218,7 @@ namespace Cosmos.IL2CPU
                         NAME = "this:" + X86.IL.Ldarg.GetArgumentDisplacement(aMethod, 0),
                         INDEXINMETHOD = 0,
                         OFFSET = X86.IL.Ldarg.GetArgumentDisplacement(aMethod, 0),
-                        TYPENAME = aMethod.MethodBase.DeclaringType.FullName
+                        TYPENAME = aMethod.MethodBase.DeclaringType.FullName ?? xIdxOffset.ToString()
                     });
 
                     xIdxOffset++;
@@ -237,7 +239,7 @@ namespace Cosmos.IL2CPU
                         INDEXINMETHOD = (int)(i + xIdxOffset),
                         NAME = xParams[i].Name,
                         OFFSET = xOffset,
-                        TYPENAME = xParams[i].ParameterType.FullName
+                        TYPENAME = xParams[i].ParameterType.FullName ?? i.ToString()
                     });
                 }
             }
@@ -801,7 +803,7 @@ namespace Cosmos.IL2CPU
                 {
                     foreach (var item in aTypesSet)
                     {
-                        if (item.ToString() == xType.BaseType.ToString())
+                        if (item.ToString() == GetFitType(xType.BaseType).ToString())
                         {
                             xBaseIndex = (int)aGetTypeID(item);
                             break;
@@ -895,7 +897,7 @@ namespace Cosmos.IL2CPU
                             xVmtDebugOutput.WriteAttributeString("Offset", Ldfld.GetFieldOffset(xType, field.Id).ToString());
                             xVmtDebugOutput.WriteEndElement();
 #endif
-                        var value = BitConverter.GetBytes(aGetTypeID(field.FieldType));
+                        var value = BitConverter.GetBytes(aGetTypeID(GetFitType(field.FieldType)));
                         for (var i = 0; i < 4; i++)
                         {
                             gcFieldTypes[4 * pos + i] = value[i];
@@ -922,14 +924,14 @@ namespace Cosmos.IL2CPU
                 XS.Push((uint)(xType.IsValueType && !xType.IsByRef && !xType.IsPointer && !xType.IsPrimitive ? 1 : 0));
 
                 LdStr.PushString(Assembler, xType.Name);
-                LdStr.PushString(Assembler, xType.AssemblyQualifiedName);
+                LdStr.PushString(Assembler, xType.AssemblyQualifiedName ?? "");
 
                 Call(VTablesImplRefs.SetTypeInfoRef);
 
                 for (int j = 0; j < xInterfaces.Length; j++)
                 {
                     var xInterface = xInterfaces[j];
-                    var xInterfaceTypeId = aGetTypeID(xInterface);
+                    var xInterfaceTypeId = aGetTypeID(GetFitType(xInterface));
 #if VMT_DEBUG
                         xVmtDebugOutput.WriteStartElement("Interface");
                         xVmtDebugOutput.WriteAttributeString("Id", xInterfaceTypeId.ToString());
@@ -1011,6 +1013,139 @@ namespace Cosmos.IL2CPU
             XS.Pop(EBP);
             XS.Return();
         }
+       
+        internal static Type GetFitType(Type aType)
+        {
+            // TODO: Generic Type Optimize
+            //if (aType.IsGenericType && !new string[] { "IList", "ICollection", "IEnumerable", "IReadOnlyList", "IReadOnlyCollection"}
+            //    .Any(i => aType.Name.Contains(i)))
+            //{
+            //    var oldType = aType;
+            //    aType = aType.GetGenericTypeDefinition();
+            //    return aType.MakeGenericType(OptimizeGenericTypeArguments(oldType.GetGenericTypeDefinition(), aType.GetGenericArguments(), oldType));
+            //}
+            return aType;
+        }
+
+        internal static Type[] OptimizeGenericTypeArguments(object defenition,Type[] genericParameters,object definedGenericMember)
+        {
+            var types = new Type[genericParameters.Length];
+            Type[] definedGenericArguments;
+            if (definedGenericMember is Type aType)
+            {
+                definedGenericArguments = aType.GetGenericArguments();
+            }
+            else if (definedGenericMember is MethodInfo aMethod)
+            {
+                definedGenericArguments = aMethod.GetGenericArguments();
+            }
+            else
+            {
+                throw new Exception("Only Type and MethodInfo can be Processed");
+            }
+            for (int i = 0; i < genericParameters.Length; i++)
+            {
+                if (genericParameters[i].GetGenericParameterConstraints().Length > 0)
+                {
+                    foreach (var item in genericParameters[i].GetGenericParameterConstraints())
+                    {
+                        if (defenition is Type aType1)
+                        {
+                            if (item == aType1)
+                            {
+                                return definedGenericArguments;
+                            }
+                        }
+                    }
+                    types[i] = (definedGenericArguments[i]); // Too complicated to optimize this
+                    if (types[i] != typeof(ValueType))
+                    {
+                        continue;
+                    }
+                }
+                GenericParameterAttributes gpa = genericParameters[i].GenericParameterAttributes;
+                GenericParameterAttributes variance = gpa & GenericParameterAttributes.VarianceMask;
+
+                // Select the variance flags.
+                if (variance != GenericParameterAttributes.None)
+                {
+                    types[i] = (definedGenericArguments[i]); // Dont mess up with errors
+                    continue;
+                }
+
+                // Select 
+                GenericParameterAttributes constraints = gpa &
+                    GenericParameterAttributes.SpecialConstraintMask;
+
+                if (constraints == GenericParameterAttributes.None)
+                {
+                    types[i] = typeof(object);
+                }
+                else
+                {
+                    if ((constraints & GenericParameterAttributes.ReferenceTypeConstraint) != 0)
+                        types[i] = typeof(object);
+                    if ((constraints & GenericParameterAttributes.NotNullableValueTypeConstraint) != 0)
+                        types[i] = typeof(ValueType);
+                    if ((constraints & GenericParameterAttributes.DefaultConstructorConstraint) != 0)
+                        types[i] = definedGenericArguments[i];
+                }
+            }
+            return types;
+        }
+ 
+        internal static MethodInfo GetFitMethod(MethodInfo aMethod)
+        {
+            //TODO: Generic Type Optimize
+            //if (!new string[] { "IList", "ICollection", "IEnumerable", "IReadOnlyList", "IReadOnlyCollection" }
+            //    .Any(i => aMethod.DeclaringType.Name.Contains(i)))
+            //{
+            //    if (aMethod.IsGenericMethod)
+            //    {
+            //        var oldMethod = aMethod;
+            //        aMethod = aMethod.GetGenericMethodDefinition();
+            //        return aMethod.MakeGenericMethod(OptimizeGenericTypeArguments(oldMethod.GetGenericMethodDefinition(), aMethod.GetGenericArguments(), oldMethod));
+            //    }
+            //    else if (aMethod.DeclaringType.IsGenericType)
+            //    {
+            //        var type = GetFitType(aMethod.DeclaringType);
+            //        var array = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+            //            .Union(type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly));
+            //        return array.SingleOrDefault(x => x.MetadataToken == aMethod.MetadataToken);
+            //    }
+            //}
+            return aMethod;
+        }
+
+        internal static MethodBase GetFitMethodBase(MethodBase aMethod)
+        {
+            if (aMethod.MemberType == MemberTypes.Method)
+            {
+                return GetFitMethod((MethodInfo)aMethod);
+            }
+            else if (aMethod.MemberType == MemberTypes.Constructor)
+            {
+                return GetFitConstructor((ConstructorInfo)aMethod);
+            }
+            return aMethod;
+        }
+
+        internal static ConstructorInfo GetFitConstructor(ConstructorInfo aMethod)
+        {
+            //TODO: Generic Type Optimize
+            //if (aMethod.DeclaringType.IsGenericType && !new string[] { "IList", "ICollection", "IEnumerable", "IReadOnlyList", "IReadOnlyCollection" }
+            //    .Any(i => aMethod.DeclaringType.Name.Contains(i)))
+            //{
+            //    // Get Constructor Defenition
+            //    var defType = GetFitType(aMethod.DeclaringType);
+            //    // Get Constructors
+            //    var instanceCtor = defType.GetConstructors(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+            //    var instanceCCtor = defType.GetConstructors(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+
+            //    return instanceCtor.Union(instanceCCtor).Single(x => x.MetadataToken == aMethod.MetadataToken);
+            //}
+            return aMethod;
+        }
 
         private static IReadOnlyList<MethodBase> GetEmittedMethods(Type aType, HashSet<MethodBase> aMethodSet)
         {
@@ -1038,7 +1173,7 @@ namespace Cosmos.IL2CPU
                         var szArray = aMethodSet.Where(method => method.DeclaringType.IsGenericType
                                                        && method.DeclaringType.GetGenericTypeDefinition() == typeof(SZArrayImpl<>)).ToList();
                         var implementation = szArray.First(method => method.Name == xMethod.Name
-                            && method.DeclaringType.GenericTypeArguments[0].Name == xMethod.DeclaringType.GenericTypeArguments[0].Name);
+                            /*&& method.DeclaringType.GenericTypeArguments[0].Name == xMethod.DeclaringType.GenericTypeArguments[0].Name*/);
                         xList.Add(implementation);
                     }
                 }
@@ -1049,7 +1184,7 @@ namespace Cosmos.IL2CPU
 
         private static IReadOnlyList<(MethodBase InterfaceMethod, MethodBase TargetMethod)> GetEmittedInterfaceMethods(Type aType, HashSet<MethodBase> aMethodSet)
         {
-            if (aType.IsInterface)
+            if (aType.IsInterface || aType.IsGenericParameter)
             {
                 return new List<(MethodBase, MethodBase)>(0);
             }
@@ -1068,7 +1203,7 @@ namespace Cosmos.IL2CPU
                         var szArray = aMethodSet.Where(method => method.DeclaringType.IsGenericType
                                                        && method.DeclaringType.GetGenericTypeDefinition() == typeof(SZArrayImpl<>)).ToList();
                         var implementation = szArray.First(method => method.Name == xMethod.Name
-                            && method.DeclaringType.GenericTypeArguments[0].Name == xMethod.DeclaringType.GenericTypeArguments[0].Name);
+                            /*&& method.DeclaringType.GenericTypeArguments[0].Name == xMethod.DeclaringType.GenericTypeArguments[0].Name*/);
                         xEmittedInterfaceMethods.Add((xMethod, implementation));
                     }
                 }

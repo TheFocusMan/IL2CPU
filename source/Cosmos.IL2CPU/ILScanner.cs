@@ -142,6 +142,19 @@ namespace Cosmos.IL2CPU
             //
             //}
             /*else*/
+            if (aItem is Type) // Fix Defenition
+            {
+                aItem = AppAssembler.GetFitType((Type)aItem);
+            }
+            else if(aItem is MethodInfo) // Fix Defenition
+            {
+                aItem = AppAssembler.GetFitMethod((MethodInfo)aItem);
+            }
+            else if (aItem is ConstructorInfo)
+            {
+                aItem = AppAssembler.GetFitConstructor((ConstructorInfo)aItem);
+            }
+
             if (!mItems.Contains(aItem))
             {
                 if (mLogEnabled)
@@ -351,7 +364,7 @@ namespace Cosmos.IL2CPU
                 if (xOpCode is ILOpCodes.OpMethod xOpMethod)
                 {
                     mItems.TryGetValue(xOpMethod.Value, out MemberInfo value);
-                    xOpMethod.Value = (MethodBase)(value ?? xOpMethod.Value);
+                    xOpMethod.Value = AppAssembler.GetFitMethodBase((MethodBase)(value ?? xOpMethod.Value));
                     xOpMethod.ValueUID = GetMethodUID(xOpMethod.Value);
                 }
             }
@@ -563,7 +576,7 @@ namespace Cosmos.IL2CPU
                             }
                             else if (xVirtMethod.DeclaringType.IsInterface
                                   && xType.GetInterfaces().Contains(xVirtMethod.DeclaringType)
-                                  && !(xType.BaseType == typeof(Array) && xVirtMethod.DeclaringType.IsGenericType))
+                                  && !(xType.BaseType == typeof(Array) && xVirtMethod.DeclaringType.IsGenericType) && !xType.IsGenericParameter)
                             {
                                 var xInterfaceMap = xType.GetInterfaceMap(xVirtMethod.DeclaringType);
                                 var xMethodIndex = Array.IndexOf(xInterfaceMap.InterfaceMethods, xVirtMethod);
@@ -940,6 +953,7 @@ namespace Cosmos.IL2CPU
             {
                 if (xItem is MethodBase xMethod)
                 {
+                    xMethod = AppAssembler.GetFitMethodBase(xMethod);
                     var xParams = xMethod.GetParameters();
                     var xParamTypes = xParams.Select(q => q.ParameterType).ToArray();
                     var xPlug = mPlugManager.ResolvePlug(xMethod, xParamTypes);
@@ -963,7 +977,7 @@ namespace Cosmos.IL2CPU
                         xMethodType = Il2cpuMethodInfo.TypeEnum.NeedsPlug;
                         xPlugAttrib = xPlug.GetCustomAttribute<PlugMethod>();
                         var xInlineAttrib = xPlug.GetCustomAttribute<InlineAttribute>();
-                        var xMethodIdPlug = mItemsList.IndexOf(xPlug);
+                        var xMethodIdPlug = mItemsList.IndexOf(AppAssembler.GetFitMethodBase(xPlug));
                         if (xMethodIdPlug == -1 && xInlineAttrib == null)
                         {
                             throw new Exception("Plug method not in scanner list!");

@@ -24,6 +24,7 @@ namespace Cosmos.IL2CPU.X86.IL
         {
             var xMethod = (OpMethod)aOpCode;
             var xCurrentLabel = GetLabel(aMethod, aOpCode);
+            xMethod.Value = AppAssembler.GetFitMethodBase(xMethod.Value);
             var xType = xMethod.Value.DeclaringType;
 
             Assemble(Assembler, aMethod, xMethod, xCurrentLabel, xType, xMethod.Value, DebugEnabled);

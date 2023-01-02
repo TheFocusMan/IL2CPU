@@ -38,7 +38,7 @@ namespace Cosmos.IL2CPU
 
         public static string GetTypeIDLabel(Type aType)
         {
-            return "VMT__TYPE_ID_HOLDER__" + DataMember.FilterStringForIncorrectChars(LabelName.GetFullName(aType) + " ASM_IS__" + aType.Assembly.GetName().Name);
+            return "VMT__TYPE_ID_HOLDER__" + DataMember.FilterStringForIncorrectChars(LabelName.GetFullName(AppAssembler.GetFitType(aType)) + " ASM_IS__" + aType.Assembly.GetName().Name);
         }
 
         public static uint Align(uint aSize, uint aAlign)
@@ -209,7 +209,7 @@ namespace Cosmos.IL2CPU
 
         public static List<_FieldInfo> GetFieldsInfo(Type aType, bool includeStatic)
         {
-            if (aType.IsValueType)
+            if (aType.IsValueType && !aType.IsGenericParameter && aType != typeof(Nullable<>))
             {
                 var fieldsInfo = GetValueTypeFieldsInfo(aType);
 
@@ -245,7 +245,7 @@ namespace Cosmos.IL2CPU
                 {
                     xDebugInfs.Add(new FIELD_INFO()
                     {
-                        TYPE = xInfo.FieldType.FullName,
+                        TYPE = xInfo.FieldType.FullName ?? xInfo.FieldType.Name,
                         OFFSET = (int)xInfo.Offset,
                         NAME = GetNameForField(xInfo),
                     });
@@ -324,7 +324,7 @@ namespace Cosmos.IL2CPU
           Type aType)
         {
             var xFMap = new DebugInfo.Field_Map();
-            xFMap.TypeName = aType.FullName;
+            xFMap.TypeName = aType.FullName ?? aType.Name;
             foreach (var xInfo in aFieldInfs)
             {
                 xFMap.FieldNames.Add(GetNameForField(xInfo));
@@ -348,7 +348,7 @@ namespace Cosmos.IL2CPU
 
         protected static uint GetStorageSize(Type aType)
         {
-            if (aType.IsValueType)
+            if (aType.IsValueType && !aType.IsGenericParameter)
             {
                 var structLayoutAttribute = aType.StructLayoutAttribute;
                 var pack = structLayoutAttribute.Pack;
@@ -683,7 +683,7 @@ namespace Cosmos.IL2CPU
             {
                 return SizeOfType(aType.GetField("value__").FieldType);
             }
-            if (aType.IsValueType && aType != typeof(ValueType))
+            if (aType.IsValueType && aType != typeof(ValueType) && aType != typeof(Nullable<>))
             {
                 // structs are stored in the stack, so stack size = storage size
                 var v = GetStorageSize(aType);

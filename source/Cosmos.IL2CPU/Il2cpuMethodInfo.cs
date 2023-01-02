@@ -62,7 +62,7 @@ namespace Cosmos.IL2CPU
 
         public Il2cpuMethodInfo(MethodBase aMethodBase, uint aUID, TypeEnum aType, Il2cpuMethodInfo aPlugMethod, bool isInlineAssembler)
         {
-            MethodBase = aMethodBase;
+            MethodBase = (aMethodBase.MemberType == MemberTypes.Method) ? AppAssembler.GetFitMethod((MethodInfo)aMethodBase) : aMethodBase;
             UID = aUID;
             Type = aType;
             PlugMethod = aPlugMethod;

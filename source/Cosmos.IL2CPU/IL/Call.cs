@@ -80,7 +80,7 @@ namespace Cosmos.IL2CPU.X86.IL
         public override void Execute(Il2cpuMethodInfo aMethod, ILOpCode aOpCode)
         {
             var xOpMethod = aOpCode as OpMethod;
-            DoExecute(Assembler, aMethod, xOpMethod.Value, aOpCode, LabelName.Get(aMethod.MethodBase), DebugEnabled);
+            DoExecute(Assembler, aMethod,AppAssembler.GetFitMethodBase(xOpMethod.Value), aOpCode, LabelName.Get(aMethod.MethodBase), DebugEnabled);
         }
 
         public static void DoExecute(XSharp.Assembler.Assembler Assembler, Il2cpuMethodInfo aCurrentMethod, MethodBase aTargetMethod, ILOpCode aCurrent, string currentLabel, bool debugEnabled)
