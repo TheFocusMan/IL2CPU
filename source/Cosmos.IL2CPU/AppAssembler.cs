@@ -1024,6 +1024,11 @@ namespace Cosmos.IL2CPU
             //    aType = aType.GetGenericTypeDefinition();
             //    return aType.MakeGenericType(OptimizeGenericTypeArguments(oldType.GetGenericTypeDefinition(), aType.GetGenericArguments(), oldType));
             //}
+            if (aType.IsGenericType && !new string[] { "IList", "ICollection", "IEnumerable", "IReadOnlyList", "IReadOnlyCollection" }
+                .Any(i => aType.Name.Contains(i)))
+            {
+                return aType.GetGenericTypeDefinition();
+            }
             return aType;
         }
 
@@ -1114,6 +1119,11 @@ namespace Cosmos.IL2CPU
             //        return array.SingleOrDefault(x => x.MetadataToken == aMethod.MetadataToken);
             //    }
             //}
+            if (aMethod.IsGenericMethod && !new string[] { "IList", "ICollection", "IEnumerable", "IReadOnlyList", "IReadOnlyCollection" }
+                .Any(i => aMethod.DeclaringType.Name.Contains(i)))
+            {
+                return aMethod.GetGenericMethodDefinition();
+            }
             return aMethod;
         }
 
@@ -1133,17 +1143,17 @@ namespace Cosmos.IL2CPU
         internal static ConstructorInfo GetFitConstructor(ConstructorInfo aMethod)
         {
             //TODO: Generic Type Optimize
-            //if (aMethod.DeclaringType.IsGenericType && !new string[] { "IList", "ICollection", "IEnumerable", "IReadOnlyList", "IReadOnlyCollection" }
-            //    .Any(i => aMethod.DeclaringType.Name.Contains(i)))
-            //{
-            //    // Get Constructor Defenition
-            //    var defType = GetFitType(aMethod.DeclaringType);
-            //    // Get Constructors
-            //    var instanceCtor = defType.GetConstructors(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
-            //    var instanceCCtor = defType.GetConstructors(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+            if (aMethod.DeclaringType.IsGenericType && !new string[] { "IList", "ICollection", "IEnumerable", "IReadOnlyList", "IReadOnlyCollection" }
+                .Any(i => aMethod.DeclaringType.Name.Contains(i)))
+            {
+                // Get Constructor Defenition
+                var defType = GetFitType(aMethod.DeclaringType);
+                // Get Constructors
+                var instanceCtor = defType.GetConstructors(BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                var instanceCCtor = defType.GetConstructors(BindingFlags.Public | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
 
-            //    return instanceCtor.Union(instanceCCtor).Single(x => x.MetadataToken == aMethod.MetadataToken);
-            //}
+                return instanceCtor.Union(instanceCCtor).Single(x => x.MetadataToken == aMethod.MetadataToken);
+            }
             return aMethod;
         }
 

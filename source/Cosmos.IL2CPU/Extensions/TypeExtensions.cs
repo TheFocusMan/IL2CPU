@@ -55,21 +55,25 @@ namespace Cosmos.IL2CPU.Extensions
                 xSB.Append(aType.Name);
             }
 
-            if (aType.ContainsGenericParameters && !aType.IsGenericParameter)
+            if (aType.IsGenericType && !aType.IsGenericTypeDefinition)
             {
-                xSB.Append("<");
                 var xArgs = aType.GetGenericArguments();
-                for (int i = 0; i < xArgs.Length - 1; i++)
+                bool AllParams = Array.TrueForAll(xArgs, x => x.IsGenericParameter);
+                if (!AllParams)
                 {
-                    xSB.Append(GetFullName(xArgs[i],false));
-                    xSB.Append(", ");
+                    xSB.Append("<");
+                    for (int i = 0; i < xArgs.Length - 1; i++)
+                    {
+                        xSB.Append(GetFullName(xArgs[i], false));
+                        xSB.Append(", ");
+                    }
+                    if (xArgs.Length == 0)
+                    {
+                        Console.Write("");
+                    }
+                    xSB.Append(GetFullName(xArgs.Last(), false));
+                    xSB.Append(">");
                 }
-                if (xArgs.Length == 0)
-                {
-                    Console.Write("");
-                }
-                xSB.Append(GetFullName(xArgs.Last(),false));
-                xSB.Append(">");
             }
             return xSB.ToString();
         }
