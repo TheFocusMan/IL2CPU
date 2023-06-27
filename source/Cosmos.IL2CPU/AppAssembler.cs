@@ -37,13 +37,14 @@ namespace Cosmos.IL2CPU
         public const string EndOfMethodLabelNameNormal = ".END__OF__METHOD_NORMAL";
         public const string EndOfMethodLabelNameException = ".END__OF__METHOD_EXCEPTION";
         private const string InitStringIDsLabel = "___INIT__STRINGS_TYPE_ID_S___";
-        private List<LOCAL_ARGUMENT_INFO> mLocals_Arguments_Infos = new List<LOCAL_ARGUMENT_INFO>();
+        private List<LOCAL_ARGUMENT_INFO> mLocals_Arguments_Infos = new();
         private ILOp[] mILOpsLo = new ILOp[256];
         private ILOp[] mILOpsHi = new ILOp[256];
         public bool ShouldOptimize = false;
         public DebugInfo DebugInfo { get; set; }
         private TextWriter mLog;
         private string mLogDir;
+        private string mOutputDir;
         private Dictionary<string, ModuleDefinition> mLoadedModules = new Dictionary<string, ModuleDefinition>();
         public TraceAssemblies TraceAssemblies;
         public bool DebugEnabled = false;
@@ -53,23 +54,22 @@ namespace Cosmos.IL2CPU
         public bool IgnoreDebugStubAttribute;
         private List<MethodIlOp> mSymbols = new List<MethodIlOp>();
         private List<INT3Label> mINT3Labels = new List<INT3Label>();
+        private int incBinCounter = 0;
         public readonly CosmosAssembler Assembler;
-
-        public AppAssembler(CosmosAssembler aAssembler, TextWriter aLog, string aLogDir)
+        
+        public AppAssembler(CosmosAssembler aAssembler, TextWriter aLog, string aLogDir, string aOutputDir)
         {
             Assembler = aAssembler;
             mLog = aLog;
             mLogDir = aLogDir;
+            mOutputDir = aOutputDir;
             InitILOps();
         }
 
         public void Dispose()
         {
-            if (mLog != null)
-            {
-                mLog.Dispose();
-                mLog = null;
-            }
+            mLog?.Dispose();
+            DebugInfo?.Dispose();
             GC.SuppressFinalize(this);
         }
 
@@ -198,7 +198,7 @@ namespace Cosmos.IL2CPU
                         mLocals_Arguments_Infos.Add(xInfo);
 
                         var xSize = ILOp.Align(ILOp.SizeOfType(xLocals[i].LocalType), 4);
-                        XS.Comment(String.Format("Local {0}, Size {1}", i, xSize));
+                        XS.Comment(string.Format("Local {0}, Size {1}", i, xSize));
                         for (int j = 0; j < xSize / 4; j++) //TODO: Can this be done shorter?
                         {
                             XS.Push(0);
@@ -415,9 +415,11 @@ namespace Cosmos.IL2CPU
             DebugInfo.AddMethod(null, true);
             DebugInfo.WriteAllLocalsArgumentsInfos(mLocals_Arguments_Infos);
             DebugInfo.AddSymbols(mSymbols, true);
-            var connection = DebugInfo.GetNewConnection();
-            DebugInfo.AddINT3Labels(connection, mINT3Labels, true);
-            connection.Close();
+
+            if (DebugInfo != null && DebugInfo.initConnection != null)
+            {
+                DebugInfo.AddINT3Labels(mINT3Labels, true);
+            }
         }
 
         public static uint GetResultCodeOffset(uint aResultSize, uint aTotalArgumentSize)
@@ -459,6 +461,7 @@ namespace Cosmos.IL2CPU
                 MethodBegin(aMethod);
                 mLog.WriteLine("Method '{0}', ID = '{1}'", aMethod.MethodBase.GetFullName(), aMethod.UID);
                 mLog.Flush();
+
                 if (aMethod.MethodAssembler != null)
                 {
                     var xAssembler = (AssemblerMethod)Activator.CreateInstance(aMethod.MethodAssembler);
@@ -474,6 +477,7 @@ namespace Cosmos.IL2CPU
 
                     EmitInstructions(aMethod, aOpCodes, false);
                 }
+
                 MethodEnd(aMethod);
             }
             catch (Exception E)
@@ -1282,9 +1286,13 @@ namespace Cosmos.IL2CPU
                         xStream.Read(xData, 16, (int)xStream.Length);
                     }
 
-                    XS.DataMemberBytes(xFieldContentsName, xData);
+                    File.WriteAllBytes(Path.Join(mOutputDir, "bin" + incBinCounter + ".bin"), xData);
+
+                    XS.DataMember(xFieldContentsName, "bin" + incBinCounter + ".bin", true);
                     XS.DataMember(xFieldName, 1, "dd", "0");
                     XS.DataMember("", 1, "dd", xFieldContentsName);
+
+                    incBinCounter++;
 
                     //Assembler.DataMembers.Add(new DataMember(xFieldContentsName, "db", xTarget.ToString()));
                     //Assembler.DataMembers.Add(new DataMember(xFieldName, "dd", xFieldContentsName));
@@ -1471,26 +1479,12 @@ namespace Cosmos.IL2CPU
             // we now need to do "newobj" on the entry point, and after that, call .Start on it
             var xCurLabel = CosmosAssembler.EntryPointName + ".CreateEntrypoint";
             XS.Label(xCurLabel);
-            Assembler.WriteDebugVideo("Now create the kernel class");
-            if (!CompilerEngine.UseGen3Kernel)
-            {
-                Newobj.Assemble(XSharp.Assembler.Assembler.CurrentInstance, null, null, xCurLabel, aEntrypoint.DeclaringType, aEntrypoint, DebugEnabled);
-                Assembler.WriteDebugVideo("Kernel class created");
-            }
+            Assembler.WriteDebugVideo("Creating the kernel class...");
+            Newobj.Assemble(XSharp.Assembler.Assembler.CurrentInstance, null, null, xCurLabel, aEntrypoint.DeclaringType, aEntrypoint, DebugEnabled);
+            Assembler.WriteDebugVideo("Kernel class created.");
             xCurLabel = CosmosAssembler.EntryPointName + ".CallStart";
             XS.Label(xCurLabel);
-            if (CompilerEngine.UseGen3Kernel)
-            {
-                foreach (var xBootEntry in aBootEntries)
-                {
-                    Assembler.WriteDebugVideo(xBootEntry.Name);
-                    X86.IL.Call.DoExecute(Assembler, null, xBootEntry, null, null, null, DebugEnabled);
-                }
-            }
-            else
-            {
-                X86.IL.Call.DoExecute(Assembler, null, aEntrypoint.DeclaringType.GetMethod(CompilerEngine.UseGen3Kernel ? "EntryPoint" : "Start"), null, xCurLabel, CosmosAssembler.EntryPointName + ".AfterStart", DebugEnabled);
-            }
+            X86.IL.Call.DoExecute(Assembler, null, aEntrypoint.DeclaringType.GetMethod("Start"), null, xCurLabel, CosmosAssembler.EntryPointName + ".AfterStart", DebugEnabled);
             XS.Label(CosmosAssembler.EntryPointName + ".AfterStart");
             XS.Pop(EBP);
             XS.Return();
@@ -1555,9 +1549,7 @@ namespace Cosmos.IL2CPU
                     LeaveAsINT3 = INT3Emitted
                 };
                 mINT3Labels.Add(xINT3Label);
-                var connection = DebugInfo.GetNewConnection(); //TODO: Do we have to do this every time? Looks like something we should only do at the end
-                DebugInfo.AddINT3Labels(connection, mINT3Labels);
-                connection.Close();
+                DebugInfo.AddINT3Labels(mINT3Labels);
             }
 
             if (DebugEnabled && StackCorruptionDetection && StackCorruptionDetectionLevel == StackCorruptionDetectionLevel.AllInstructions
